@@ -1,1 +1,165 @@
+1. I created the metered API using Azure Cloud Shell
 
+az resource create --resource-group cs-defendertest-RG --name assignSensitivityLabel --resource-type Microsoft.GraphServices/accounts --properties "{""appId"": ""02c56f18-e87b-""}" --location Global --subscription "fc7548fd-b9f0-4c64-"
+
+Source: https://learn.microsoft.com/en-us/graph/metered-api-setup?tabs=azurecloudshell#enable-an-application
+
+
+2. I then used the script from "https://sposcripts.com/assign-sensitivity-labels-in-sharepoint/" but I changed the 'Connect-MgGraph' method to use an Auth Token (I created the Auth token using Postman)
+
+
+
+Param (
+    $AppId = "02c56f18-e87b-421e-", # Replace with the App Id of your App registration
+    $SiteId = "289ff075-317c-4f15-",
+    $Tenant = "2cf676ef-fa84-", # Replace with the Tenant prefix
+    $LibraryName = "Documents", # Replace with the list name,
+    $CertificatePath = "C:\Users\Admin\Downloads\assisenlab.pfx", # Replace with the path to your certificate,
+    $CertificatePasswordPath = "C:\Users\Admin\Downloads\assisen.key", # Replace with the password of your certificate,
+    $SensitivityLabelId = "7824fb59-4fc6-4a6b-",  # Id of the sensitivitylabel. Can be obtained here: https://compliance.microsoft.com/informationprotection/labels
+    $Justificationtext = "Labelled", #Here you can justify your labelling
+    $AssignmentMethod = "Standard", # The assignment method of the label on the document. Can be obtained here: https://learn.microsoft.com/en-us/dotnet/api/microsoft.informationprotection.assignmentmethod?view=mipsdk-dotnet-1.10
+    $AppSecret = "JUP8Q~-3I1SJRQXuP1L"       
+)
+
+function List-MgDriveItem
+{
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        $Drive,
+        [Parameter()]
+        $DriveItem
+    )
+
+    Try
+    {
+        if ($DriveItem.folder)
+        {
+            # Recurse in the folder to get the childitems of the folder
+            $ChildItems = (Get-MgDriveItem -DriveId $Drive.Id -DriveItemId $DriveItem.Id  -ExpandProperty Children ).Children
+
+            if ($ChildItems.Count -gt 0)
+            {
+                <# Action to perform if the condition is true #>
+                $ChildItems | ForEach-Object { 
+                    List-MgDriveItem -Drive $Drive -DriveItem (Get-MgDriveItem -DriveId $Drive.Id -DriveItemId $($_.Id) ) 
+                }
+            }
+
+        }
+
+            $Result = New-Object psobject -Property @{
+            DriveItemName = $DriveItem.name;
+            DriveitemId   = $DriveItem.Id;
+            DriveId       = $Drive.Id;
+            DriveItemURL  = $DriveItem.webUrl
+        }
+        return $Result
+    }
+    catch
+    {
+        Return $Error[0]
+    }
+
+}
+function Assign-SensitivityLabel
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        $DriveId,
+        
+        [Parameter(Mandatory = $true)]
+        $DriveItemId,
+        
+        [Parameter(Mandatory = $false)]
+        $AssignmentMethod = "Standard", # The assignment method of the label on the document. Can be obtained here: https://learn.microsoft.com/en-us/dotnet/api/microsoft.informationprotection.assignmentmethod?view=mipsdk-dotnet-1.10
+        
+        [Parameter(Mandatory = $false)]
+        $JustificationText = "No justification provided", # Justification why this sensitivity label is applied.
+
+        [Parameter(Mandatory = $true)]
+        $SensitivityLabelId # Id of the sensitivitylabel. Can be obtained here: https://compliance.microsoft.com/informationprotection/labels
+    )
+
+    $Body = @{
+        Any                = $null
+        AssignmentMethod   = $AssignmentMethod
+        JustificationText  = $JustificationText
+        SensitivityLabelId = $SensitivityLabelId #Trusted People https://compliance.microsoft.com/informationprotection/labels
+    }
+    $Uri = "https://graph.microsoft.com/v1.0/drives/$($DriveId)/items/$($DriveItemId)/assignSensitivityLabel"
+    
+    try
+    {
+
+        $Response = Invoke-MgGraphRequest -Method "POST" -Uri $Uri  -Body $Body -OutputType PSObject
+        Return $Response
+    }
+    catch
+    {
+        $Error[0].Exception
+    }
+}
+
+
+# Load required Modules
+Import-Module Microsoft.Graph.Authentication, Microsoft.Graph.Files
+
+# Load the certificate from file
+$CertificatePassword = (Import-Clixml -Path $CertificatePasswordPath).getnetworkcredential().Password
+$Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertificatePath, $CertificatePassword)
+
+# Authenticate
+#Connect-MgGraph -ClientId $AppId -TenantId $Tenant -CertificateThumbprint $Certificate.Thumbprint -NoWelcome
+
+$AccessToken = convertto-securestring "eyJ0eXAiOiJKV1QiLCJub25jZSI6ImNBMUxIbFR5UW85ZFBQUTRTa1dIVDdDaENrY2d1czJyMXhFM20yRVlQTzQiLCJhbGciOiJSUzI1NiIsIng1dCI6IkwxS2ZLRklfam5YYndXYzIyeFp4dzFzVUhIMCIsImtpZCI6IkwxS2ZLRklfam5YYndXYzIyeFp4dzFzVUhIMCJ9.eyJhdWQiOiJodHRwczovL2dyYXBoLm1pY3Jvc29mdC5jb20iLCJpc3MiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC8yY2Y2NzZlZi1mYTg0LTQ2MWMtYmVlOS0wMDM0YjA1ODc5NzYvIiwiaWF0IjoxNzE2MjEwMzAyLCJuYmYiOjE3MTYyMTAzMDIsImV4cCI6MTcxNjIxNDIwMiwiYWlvIjoiRTJOZ1lQQXZuVk5nMUJKd3pDbGhheFhQMlkvL0FRPT0iLCJhcHBfZGlzcGxheW5hbWUiOiJBc3NpZ24gU2Vuc2l0aXZpdHkgTGFiZWxzIiwiYXBwaWQiOiIwMmM1NmYxOC1lODdiLTQyMWUtYmFhNi00Y2NjOWQ3MTJhZmUiLCJhcHBpZGFjciI6IjEiLCJpZHAiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC8yY2Y2NzZlZi1mYTg0LTQ2MWMtYmVlOS0wMDM0YjA1ODc5NzYvIiwiaWR0eXAiOiJhcHAiLCJvaWQiOiIyOTk4OGM4OS0zNWY0LTQ5N2UtOGM5Zi1kYWM0NzI0ZTlmZTQiLCJyaCI6IjAuQVlJQTczYjJMSVQ2SEVhLTZRQTBzRmg1ZGdNQUFBQUFBQUFBd0FBQUFBQUFBQUNWQUFBLiIsInJvbGVzIjpbIkZpbGVzLlJlYWRXcml0ZS5BcHBGb2xkZXIiLCJVc2VyLlJlYWRXcml0ZS5BbGwiLCJBcHBsaWNhdGlvbi5SZWFkV3JpdGUuQWxsIiwiRGlyZWN0b3J5LlJlYWRXcml0ZS5BbGwiLCJTaXRlcy5SZWFkV3JpdGUuQWxsIiwiRmlsZXMuUmVhZFdyaXRlLkFsbCIsIkZpbGVzLlJlYWQuQWxsIiwiT3JnYW5pemF0aW9uLlJlYWRXcml0ZS5BbGwiLCJTaXRlcy5GdWxsQ29udHJvbC5BbGwiXSwic3ViIjoiMjk5ODhjODktMzVmNC00OTdlLThjOWYtZGFjNDcyNGU5ZmU0IiwidGVuYW50X3JlZ2lvbl9zY29wZSI6IkVVIiwidGlkIjoiMmNmNjc2ZWYtZmE4NC00NjFjLWJlZTktMDAzNGIwNTg3OTc2IiwidXRpIjoiLWN5dmMtMlRQVXVXUEtOWTh5VlhBQSIsInZlciI6IjEuMCIsIndpZHMiOlsiMDk5N2ExZDAtMGQxZC00YWNiLWI0MDgtZDVjYTczMTIxZTkwIl0sInhtc19hcHBfYmlsbF9pZCI6IjFmYjgzZGEzLTI4NzgtNDNhOS1hZjhjLTFkMzEyNDVjODkwMyIsInhtc19hcHBfYmlsbF9zdGF0ZSI6MSwieG1zX3RjZHQiOjE2NDc0NjQ5NTEsInhtc190ZGJyIjoiRVUifQ.OBDIU9OZ8wTT-XuE0iS-QYChEQcGM7dwquShKQ9zxwNHoXF7L5bLb-oq-GGlhD_p04ZZPhId5cbdvTiVQq0qlFpBCQ9HFHGbkTxuHGZDxjtl9ysOwJxgiz8X6Y0sUdBXBtrwp-4lz34YwKfkfmQw6D6B2h4-5qa8s_hGlY8lL6L-l127seBN8DIYXDH5B7MQJniKeu0uH2jJq3Rf-qP3i5av2zacPUrhdwXvs3xRKXIqAg0-wl9Wr11M7OcbSH6RArW9JOzaki6zRHSTCdaRIoN7r-hVwNH714mnRKkJh_R-D2hZ5KfSTDWxH4O5WKElS9oR58zUU5I6hwdFaXhXaA" -AsPlainText -Force
+Connect-MgGraph -AccessToken $AccessToken -NoWelcome
+ 
+#region prepare export
+
+# Get drive
+$Drive = Get-MgSite -SiteId $SiteId -Property Drives -ExpandProperty Drives | Select-Object Drives -ExpandProperty Drives | Where-Object { $_.Name -eq $LibraryName }
+
+# Get drive item
+$DriveItems = Invoke-MgGraphRequest -Uri "v1.0/drives/$($Drive.Id)/root/children"
+
+$ItemExportRaw = New-Object System.Collections.Generic.List[object]
+
+foreach ($DriveItem in $DriveItems.Value)
+{
+    #Get All drivitems below root
+    $ItemExportRaw.Add( $(List-MgDriveItem -Drive $Drive -DriveItem $DriveItem))
+}
+
+$ItemExport = New-Object System.Collections.Generic.List[object]
+
+
+$ItemExportRaw |ForEach-Object {
+
+        $_ | ForEach-Object {$ItemExport.add($_)}    
+}
+
+#endregion
+
+#region assign sensitivity label
+
+foreach ($Item in $ItemExport)
+{
+    <# $Item is the current item #>
+
+    $SensitivyLabelParams  =$null
+    $SensitivyLabelParams = @{
+        DriveId            = $Item.DriveId
+        DriveitemId        = $Item.DriveitemId
+        AssignmentMethod   = $AssignmentMethod
+        Justificationtext  = $Justificationtext
+        SensitivityLabelId = $SensitivityLabelId
+    }
+
+    Write-Output "Assigining sensitivity label to $($Item.DriveItemName)"
+    Assign-SensitivityLabel @SensitivyLabelParams
+}
+
+#endregon
