@@ -1,6 +1,6 @@
 1. I created the metered API using Azure Cloud Shell
 
-az resource create --resource-group cs-defendertest-RG --name assignSensitivityLabel --resource-type Microsoft.GraphServices/accounts --properties "{""appId"": ""02c56f18-e87b-""}" --location Global --subscription "fc7548fd-b9f0-4c64-"
+az resource create --resource-group New-RG --name assignSensitivityLabel --resource-type Microsoft.GraphServices/accounts --properties "{""appId"": ""02c56f18-e87b-""}" --location Global --subscription "fc7548fd-b9f0-4c64-"
 
 Source: https://learn.microsoft.com/en-us/graph/metered-api-setup?tabs=azurecloudshell#enable-an-application
 
