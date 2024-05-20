@@ -7,7 +7,7 @@ Source: https://learn.microsoft.com/en-us/graph/metered-api-setup?tabs=azureclou
 Azure App Registration permissions: Sites.ReadWrite.All
 
 
-2. I then used the script from "https://sposcripts.com/assign-sensitivity-labels-in-sharepoint/" (below) but I changed the 'Connect-MgGraph' method to use an Auth Token (I created the Auth token using Postman)
+2. I then used the script from "https://sposcripts.com/assign-sensitivity-labels-in-sharepoint/" (below) but I changed the 'Connect-MgGraph' method to use an Auth Token (I created the $AccessToken token using Postman. Probably not the most efficient way I'm sure, but I am just learning :) )
 
 
 
